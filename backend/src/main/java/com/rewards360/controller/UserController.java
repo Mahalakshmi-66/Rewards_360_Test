@@ -1,6 +1,5 @@
 package com.rewards360.controller;
 
-import java.time.LocalDate;
 import java.util.List;
 
 import org.springframework.http.ResponseEntity;
@@ -22,6 +21,7 @@ import com.rewards360.repository.OfferRepository;
 import com.rewards360.repository.RedemptionRepository;
 import com.rewards360.repository.TransactionRepository;
 import com.rewards360.repository.UserRepository;
+import com.rewards360.service.PointsService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -30,10 +30,14 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 @CrossOrigin
 public class UserController {
+
     private final UserRepository userRepository;
     private final OfferRepository offerRepository;
     private final TransactionRepository transactionRepository;
     private final RedemptionRepository redemptionRepository;
+
+    // NEW: inject PointsService
+    private final PointsService pointsService;
 
     private User currentUser(Authentication auth){
         return userRepository.findByEmail(auth.getName()).orElseThrow();
@@ -49,71 +53,36 @@ public class UserController {
         return ResponseEntity.ok(offerRepository.findAll());
     }
 
+    // CHANGED: delegate to PointsService
     @PostMapping("/claim")
     public ResponseEntity<Transaction> claim(@RequestBody ClaimRequest req, Authentication auth){
         User user = currentUser(auth);
-        Transaction txn = Transaction.builder()
-                .externalId("CLAIM-"+System.currentTimeMillis())
-                .type("CLAIM")
-                .pointsEarned(req.points())
-                .pointsRedeemed(0)
-                .store("Online")
-                .date(LocalDate.now())
-                .expiry(LocalDate.now().plusMonths(3))
-                .note(req.note())
-                .user(user)
-                .build();
-        user.getProfile().setPointsBalance(user.getProfile().getPointsBalance()+req.points());
-        transactionRepository.save(txn);
-        userRepository.save(user);
+        Transaction txn = pointsService.claimPoints(user, req);
         return ResponseEntity.ok(txn);
     }
 
+    // CHANGED: delegate to PointsService and preserve original 400 behavior
     @PostMapping("/redeem")
     public ResponseEntity<Redemption> redeem(@RequestBody RedeemRequest req, Authentication auth){
         User user = currentUser(auth);
-        Offer offer = offerRepository.findById(req.offerId()).orElseThrow();
-        if(user.getProfile().getPointsBalance() < offer.getCostPoints()){
-            return ResponseEntity.badRequest().build();
-        }
-        user.getProfile().setPointsBalance(user.getProfile().getPointsBalance()-offer.getCostPoints());
-        Transaction txn = Transaction.builder()
-                .externalId("RED-"+System.currentTimeMillis())
-                .type("REDEMPTION")
-                .pointsEarned(0)
-                .pointsRedeemed(offer.getCostPoints())
-                .store(req.store())
-                .date(LocalDate.now())
-                .note(offer.getTitle())
-                .user(user)
-                .build();
-        transactionRepository.save(txn);
-        Redemption red = Redemption.builder()
-                .transactionId(txn.getExternalId())
-                .confirmationCode("CONF-"+System.currentTimeMillis())
-                .date(LocalDate.now())
-                .costPoints(offer.getCostPoints())
-                .offerTitle(offer.getTitle())
-                .store(req.store())
-                .user(user)
-                .build();
-        redemptionRepository.save(red);
-        userRepository.save(user);
-        return ResponseEntity.ok(red);
+        return pointsService.redeemOffer(user, req)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.badRequest().build());
     }
 
-  @GetMapping("/transactions")
-public ResponseEntity<List<Transaction>> transactions(Authentication auth) {
-    Long userId = currentUser(auth).getId();
-    return ResponseEntity.ok(
-        transactionRepository.findByUserIdOrderByDateDesc(userId)
-    );
-}
- @GetMapping("/redemptions")
-public ResponseEntity<List<Redemption>> redemptions(Authentication auth){
-    Long userId = currentUser(auth).getId();
-    return ResponseEntity.ok(
-        redemptionRepository.findByUserIdOrderByDateDesc(userId)
-    );
-}
+    @GetMapping("/transactions")
+    public ResponseEntity<List<Transaction>> transactions(Authentication auth) {
+        Long userId = currentUser(auth).getId();
+        return ResponseEntity.ok(
+                transactionRepository.findByUserIdOrderByDateDesc(userId)
+        );
+    }
+
+    @GetMapping("/redemptions")
+    public ResponseEntity<List<Redemption>> redemptions(Authentication auth){
+        Long userId = currentUser(auth).getId();
+        return ResponseEntity.ok(
+                redemptionRepository.findByUserIdOrderByDateDesc(userId)
+        );
+    }
 }

@@ -102,7 +102,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ===== Daily Activities (its own section) ===== */}
+      {/* ===== Daily Activities + Recent Transactions ===== */}
       <div className="d-card">
         <h3 className="d-section-title">Daily Activities</h3>
         <div className="d-activities-row">
@@ -112,9 +112,9 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ===== Recent Transactions (its own section) ===== */}
+     
       <div className="d-card">
-        <h3 className="d-section-title">Recent Transactions (Top 10)</h3>
+        <h3 className="d-section-title">Recent Transactions</h3>
         <div className="d-table-wrap">
           <table className="d-table">
             <thead>
