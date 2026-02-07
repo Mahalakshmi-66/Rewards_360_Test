@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.rewards360.dto.ClaimRequest;
 import com.rewards360.dto.RedeemRequest;
+import com.rewards360.exception.UserNotFoundException;
 import com.rewards360.model.Offer;
 import com.rewards360.model.Redemption;
 import com.rewards360.model.Transaction;
@@ -35,54 +36,67 @@ public class UserController {
     private final OfferRepository offerRepository;
     private final TransactionRepository transactionRepository;
     private final RedemptionRepository redemptionRepository;
-
-    // NEW: inject PointsService
     private final PointsService pointsService;
 
-    private User currentUser(Authentication auth){
-        return userRepository.findByEmail(auth.getName()).orElseThrow();
+    // Get current user from authentication
+    private User getCurrentUser(Authentication auth) {
+        String email = auth.getName();
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new UserNotFoundException("User not found with email: " + email));
     }
 
+    // Get user profile
     @GetMapping("/me")
-    public ResponseEntity<User> me(Authentication auth){
-        return ResponseEntity.ok(currentUser(auth));
+    public ResponseEntity<User> getMyProfile(Authentication auth) {
+        User user = getCurrentUser(auth);
+        return ResponseEntity.ok(user);
     }
 
+    // Get all offers
     @GetMapping("/offers")
-    public ResponseEntity<List<Offer>> offers(){
-        return ResponseEntity.ok(offerRepository.findAll());
+    public ResponseEntity<List<Offer>> getAllOffers() {
+        List<Offer> offers = offerRepository.findAll();
+        return ResponseEntity.ok(offers);
+    }
+    
+    // Get offers based on user tier
+    @GetMapping("/offers/my-tier")
+    public ResponseEntity<List<Offer>> getOffersForMyTier(Authentication auth) {
+        User user = getCurrentUser(auth);
+        String userTier = user.getProfile().getLoyaltyTier();
+        List<Offer> offers = offerRepository.findAvailableOffersForTier(userTier);
+        return ResponseEntity.ok(offers);
     }
 
-    // CHANGED: delegate to PointsService
+    // Claim points
     @PostMapping("/claim")
-    public ResponseEntity<Transaction> claim(@RequestBody ClaimRequest req, Authentication auth){
-        User user = currentUser(auth);
-        Transaction txn = pointsService.claimPoints(user, req);
-        return ResponseEntity.ok(txn);
+    public ResponseEntity<Transaction> claimPoints(@RequestBody ClaimRequest request, Authentication auth) {
+        User user = getCurrentUser(auth);
+        Transaction transaction = pointsService.claimPoints(user, request);
+        return ResponseEntity.ok(transaction);
     }
 
-    // CHANGED: delegate to PointsService and preserve original 400 behavior
+    // Redeem offer
     @PostMapping("/redeem")
-    public ResponseEntity<Redemption> redeem(@RequestBody RedeemRequest req, Authentication auth){
-        User user = currentUser(auth);
-        return pointsService.redeemOffer(user, req)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.badRequest().build());
+    public ResponseEntity<Redemption> redeemOffer(@RequestBody RedeemRequest request, Authentication auth) {
+        User user = getCurrentUser(auth);
+        Redemption redemption = pointsService.redeemOffer(user, request);
+        return ResponseEntity.ok(redemption);
     }
 
+    // Get user transactions
     @GetMapping("/transactions")
-    public ResponseEntity<List<Transaction>> transactions(Authentication auth) {
-        Long userId = currentUser(auth).getId();
-        return ResponseEntity.ok(
-                transactionRepository.findByUserIdOrderByDateDesc(userId)
-        );
+    public ResponseEntity<List<Transaction>> getMyTransactions(Authentication auth) {
+        User user = getCurrentUser(auth);
+        List<Transaction> transactions = transactionRepository.findByUserIdOrderByDateDesc(user.getId());
+        return ResponseEntity.ok(transactions);
     }
 
+    // Get user redemptions
     @GetMapping("/redemptions")
-    public ResponseEntity<List<Redemption>> redemptions(Authentication auth){
-        Long userId = currentUser(auth).getId();
-        return ResponseEntity.ok(
-                redemptionRepository.findByUserIdOrderByDateDesc(userId)
-        );
+    public ResponseEntity<List<Redemption>> getMyRedemptions(Authentication auth) {
+        User user = getCurrentUser(auth);
+        List<Redemption> redemptions = redemptionRepository.findByUserIdOrderByDateDesc(user.getId());
+        return ResponseEntity.ok(redemptions);
     }
 }

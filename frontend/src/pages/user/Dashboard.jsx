@@ -1,23 +1,20 @@
 // src/pages/Dashboard.jsx
-import React, { useEffect, useState } from 'react'
-import api from '../../api/client'
+import React, { useState, useEffect } from 'react'
+import { useUser } from '../../context/UserContext'
 import { Link } from 'react-router-dom'
 import '../../../styles/Dashboard.css'
 
-function ClaimCard({ a, onClaimed }) {
+function ClaimCard({ a, onClaimed, isClaimed }) {
   const [busy, setBusy] = useState(false)
-  const [ok, setOk] = useState(false)
+  const { claimPoints } = useUser()
 
   const claim = async () => {
     setBusy(true)
     try {
-      await api.post('/user/claim', {
-        activityCode: a.code,
-        points: a.points,
-        note: a.title
-      })
-      setOk(true)
-      onClaimed?.() // tell parent to refresh me + transactions
+      await claimPoints(a.code, a.points, a.title)
+      onClaimed(a.code)
+    } catch (error) {
+      console.error('Failed to claim:', error)
     } finally {
       setBusy(false)
     }
@@ -27,7 +24,7 @@ function ClaimCard({ a, onClaimed }) {
     <div className="d-card d-claim-card">
       <h4 className="d-card-title">{a.title}</h4>
       <p>Earn {a.points} points</p>
-      {!ok ? (
+      {!isClaimed ? (
         <button disabled={busy} className="d-btn" onClick={claim}>
           {busy ? 'Claiming…' : 'Claim'}
         </button>
@@ -39,31 +36,23 @@ function ClaimCard({ a, onClaimed }) {
 }
 
 export default function Dashboard() {
-  const [me, setMe] = useState(null)
-  const [txns, setTxns] = useState([])
+  const { user, transactions, loading } = useUser()
+  const [claimedActivities, setClaimedActivities] = useState(() => {
+    // Load claimed activities from sessionStorage on mount
+    const saved = sessionStorage.getItem('claimedActivities')
+    return saved ? JSON.parse(saved) : []
+  })
 
-  const loadMe = async () => {
-    const meRes = await api.get('/user/me')
-    setMe(meRes.data)
-  }
-
-  const loadTxns = async () => {
-    const txRes = await api.get('/user/transactions')
-    setTxns(txRes.data)
-  }
-
-  const refreshAfterClaim = async () => {
-    // Refetch both: updates balance and the table
-    await Promise.all([loadMe(), loadTxns()])
-  }
-
+  // Save to sessionStorage whenever claimedActivities changes
   useEffect(() => {
-    (async () => {
-      await Promise.all([loadMe(), loadTxns()])
-    })()
-  }, [])
+    sessionStorage.setItem('claimedActivities', JSON.stringify(claimedActivities))
+  }, [claimedActivities])
 
-  if (!me) return null
+  const handleClaimed = (code) => {
+    setClaimedActivities(prev => [...prev, code])
+  }
+
+  if (loading || !user) return <div className="d-page">Loading...</div>
 
   const activities = [
     { title: 'Daily Login Bonus', points: 50, code: 'LOGIN' },
@@ -73,7 +62,16 @@ export default function Dashboard() {
   ]
 
   // Replace with your real field if you have one
-  const nextExpiry = me.profile?.nextExpiryDate ?? '23/2/2026'
+  const nextExpiry = user.profile?.nextExpiryDate ?? '23/2/2026'
+
+  // Calculate today's points - fix date format to match backend (YYYY-MM-DD)
+  const today = new Date().toISOString().split('T')[0]
+  const todayTransactions = transactions.filter(t => t.date === today)
+  const pointsEarnedToday = todayTransactions.reduce((sum, t) => sum + (t.pointsEarned || 0), 0)
+  const pointsRedeemedToday = todayTransactions.reduce((sum, t) => sum + (t.pointsRedeemed || 0), 0)
+  
+  // Total Earned should show lifetime points from profile
+  const totalPointsEarned = user.profile?.lifetimePoints ?? 0
 
   return (
     <div className="d-page">
@@ -84,9 +82,9 @@ export default function Dashboard() {
           <div className="d-ps-left">
             <h3 className="d-ps-title">Points Summary</h3>
             <p className="d-ps-sub">
-              Member: <span className="d-ps-strong">{me.name}</span>
+              Member: <span className="d-ps-strong">{user.name}</span>
               <span className="d-ps-dot">·</span>
-              Tier: <span className="d-ps-strong">{me.profile?.loyaltyTier || 'Bronze'}</span>
+              Tier: <span className="d-ps-strong">{user.profile?.loyaltyTier }</span>
             </p>
             <div className="d-ps-pill">
               <span className="d-ps-pill-label">Next Expiry</span>
@@ -97,7 +95,32 @@ export default function Dashboard() {
           {/* Right: current balance */}
           <div className="d-ps-right">
             <div className="d-ps-right-label">Current Balance</div>
-            <div className="d-ps-right-value">{me.profile?.pointsBalance ?? 0}</div>
+            <div className="d-ps-right-value">{user.profile?.pointsBalance ?? 0}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ===== Stats Cards ===== */}
+      <div className="d-stats-row">
+        <div className="d-stat-card">
+          <div className="d-stat-icon">📊</div>
+          <div className="d-stat-content">
+            <div className="d-stat-label">Total Earned</div>
+            <div className="d-stat-value">{totalPointsEarned}</div>
+          </div>
+        </div>
+        <div className="d-stat-card">
+          <div className="d-stat-icon">⬆️</div>
+          <div className="d-stat-content">
+            <div className="d-stat-label">Earned Today</div>
+            <div className="d-stat-value d-stat-earned">{pointsEarnedToday}</div>
+          </div>
+        </div>
+        <div className="d-stat-card">
+          <div className="d-stat-icon">⬇️</div>
+          <div className="d-stat-content">
+            <div className="d-stat-label">Redeemed Today</div>
+            <div className="d-stat-value d-stat-redeemed">{pointsRedeemedToday}</div>
           </div>
         </div>
       </div>
@@ -107,7 +130,12 @@ export default function Dashboard() {
         <h3 className="d-section-title">Daily Activities</h3>
         <div className="d-activities-row">
           {activities.map(a => (
-            <ClaimCard key={a.code} a={a} onClaimed={refreshAfterClaim} />
+            <ClaimCard 
+              key={a.code} 
+              a={a} 
+              onClaimed={handleClaimed}
+              isClaimed={claimedActivities.includes(a.code)}
+            />
           ))}
         </div>
       </div>
@@ -127,16 +155,20 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {txns.map(t => (
+              {transactions.map(t => (
                 <tr key={t.id}>
                   <td>{t.date}</td>
                   <td>{t.type}</td>
-                  <td>{t.pointsEarned}</td>
-                  <td>{t.pointsRedeemed}</td>
+                  <td style={{ color: t.pointsEarned > 0 ? '#059669' : '#64748b', fontWeight: t.pointsEarned > 0 ? '700' : '500' }}>
+                    {t.pointsEarned > 0 ? `+${t.pointsEarned}` : t.pointsEarned || '—'}
+                  </td>
+                  <td style={{ color: t.pointsRedeemed > 0 ? '#dc2626' : '#64748b', fontWeight: t.pointsRedeemed > 0 ? '700' : '500' }}>
+                    {t.pointsRedeemed > 0 ? `-${t.pointsRedeemed}` : t.pointsRedeemed || '—'}
+                  </td>
                   <td>{t.store || t.note}</td>
                 </tr>
               ))}
-              {txns.length === 0 && (
+              {transactions.length === 0 && (
                 <tr>
                   <td colSpan="5" style={{ textAlign: 'center', color: '#64748b', padding: 12 }}>
                     No transactions yet.

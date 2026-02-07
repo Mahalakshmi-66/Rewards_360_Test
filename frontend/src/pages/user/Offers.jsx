@@ -1,27 +1,25 @@
-import React, { useEffect, useState } from 'react'
-import api from '../../api/client'
+import React, { useState } from 'react'
+import { useUser } from '../../context/UserContext'
 import '../../../styles/Offer.css'
 
 export default function Offers() {
-  const [offers, setOffers] = useState([])
-  const [me, setMe] = useState(null)
+  const { user, offers, redeemOffer, loading } = useUser()
   const [confirm, setConfirm] = useState(null)
 
-  useEffect(() => {
-    (async () => {
-      const o = await api.get('/user/offers'); setOffers(o.data)
-      const m = await api.get('/user/me'); setMe(m.data)
-    })()
-  }, [])
+  if (loading || !user) return <div className="offers-page">Loading...</div>
 
   const open = (o) => setConfirm(o)
   const close = () => setConfirm(null)
 
   const redeem = async () => {
     if (!confirm) return
-    await api.post('/user/redeem', { offerId: confirm.id, store: 'Online' })
-    setConfirm(null)
-    alert('Redemption confirmed! Check Redemptions page.')
+    try {
+      await redeemOffer(confirm.id, 'Online')
+      setConfirm(null)
+      alert('Redemption confirmed! Check Redemptions page.')
+    } catch (error) {
+      alert('Failed to redeem offer. Please try again.')
+    }
   }
 
   return (
@@ -32,25 +30,21 @@ export default function Offers() {
           <div className="o-hero-row">
             <div>
               <h3 className="o-hero-title">Member Offers</h3>
-              {me && (
-                <div className="o-hero-sub">
-                  <span className="o-user-chip">
-                    <span className="o-user-dot" />
-                    {me.name}
-                  </span>
-                  <span className="o-sep">•</span>
-                  <span className="o-tier">Tier:&nbsp;<strong>{me.profile?.loyaltyTier || 'Bronze'}</strong></span>
-                </div>
-              )}
+              <div className="o-hero-sub">
+                <span className="o-user-chip">
+                  <span className="o-user-dot" />
+                  {user.name}
+                </span>
+                <span className="o-sep">•</span>
+                <span className="o-tier">Tier:&nbsp;<strong>{user.profile?.loyaltyTier || 'Bronze'}</strong></span>
+              </div>
             </div>
 
-            {me && (
-              <div className="o-hero-balance-badge" title="Current Points Balance">
-                <span className="o-balance-label">Balance</span>
-                <span className="o-balance-value">{me.profile?.pointsBalance ?? 0}</span>
-                <span className="o-balance-unit">pts</span>
-              </div>
-            )}
+            <div className="o-hero-balance-badge" title="Current Points Balance">
+              <span className="o-balance-label">Balance</span>
+              <span className="o-balance-value">{user.profile?.pointsBalance ?? 0}</span>
+              <span className="o-balance-unit">pts</span>
+            </div>
           </div>
         </div>
       </div>
@@ -67,7 +61,7 @@ export default function Offers() {
               <p className="o-desc">{o.description}</p>
               <div className="o-row">
                 <span className="o-pill">Cost: <strong>{o.costPoints}</strong> pts</span>
-                <button className="o-btn" onClick={() => open(o)} disabled={me?.profile?.pointsBalance < o.costPoints}>Redeem</button>
+                <button className="o-btn" onClick={() => open(o)} disabled={user?.profile?.pointsBalance < o.costPoints}>Redeem</button>
               </div>
             </div>
           </div>

@@ -1,13 +1,14 @@
 package com.rewards360.service;
 
 import java.time.LocalDate;
-import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.rewards360.dto.ClaimRequest;
 import com.rewards360.dto.RedeemRequest;
+import com.rewards360.exception.InsufficientPointsException;
+import com.rewards360.exception.OfferNotFoundException;
 import com.rewards360.model.Offer;
 import com.rewards360.model.Redemption;
 import com.rewards360.model.Transaction;
@@ -28,72 +29,88 @@ public class PointsService {
     private final TransactionRepository transactionRepository;
     private final RedemptionRepository redemptionRepository;
 
+    // Claim points for user
     @Transactional
-    public Transaction claimPoints(User user, ClaimRequest req) {
-        // Build CLAIM transaction (same logic as in original controller)
-        Transaction txn = Transaction.builder()
-            .externalId("CLAIM-" + System.currentTimeMillis())
-            .type("CLAIM")
-            .pointsEarned(req.points())
-            .pointsRedeemed(0)
-            .store("Online")
-            .date(LocalDate.now())
-            .expiry(LocalDate.now().plusMonths(3))
-            .note(req.note())
-            .user(user)
-            .build();
+    public Transaction claimPoints(User user, ClaimRequest request) {
+        // Create new transaction
+        Transaction transaction = new Transaction();
+        transaction.setExternalId("CLAIM-" + System.currentTimeMillis());
+        transaction.setType("CLAIM");
+        transaction.setPointsEarned(request.points());
+        transaction.setPointsRedeemed(0);
+        transaction.setStore("Online");
+        transaction.setDate(LocalDate.now());
+        transaction.setExpiry(LocalDate.now().plusMonths(3));
+        transaction.setNote(request.note());
+        transaction.setUser(user);
 
-        // Update balance then persist
-        user.getProfile().setPointsBalance(user.getProfile().getPointsBalance() + req.points());
-        transactionRepository.save(txn);
+        // Update user points balance
+        int currentPoints = user.getProfile().getPointsBalance();
+        int newPoints = currentPoints + request.points();
+        user.getProfile().setPointsBalance(newPoints);
+
+        // Update lifetime points
+        int lifetimePoints = user.getProfile().getLifetimePoints();
+        user.getProfile().setLifetimePoints(lifetimePoints + request.points());
+
+        // Tier will be automatically updated by JPA @PreUpdate callback in CustomerProfile
+
+        // Save transaction and update user
+        transactionRepository.save(transaction);
         userRepository.save(user);
 
-        return txn;
+        return transaction;
     }
 
+    // Redeem offer for user
     @Transactional
-    public Optional<Redemption> redeemOffer(User user, RedeemRequest req) {
-        // Load offer
-        Offer offer = offerRepository.findById(req.offerId()).orElseThrow();
+    public Redemption redeemOffer(User user, RedeemRequest request) {
+        // Find offer
+        Offer offer = offerRepository.findById(request.offerId())
+                .orElseThrow(() -> new OfferNotFoundException("Offer not found with id: " + request.offerId()));
 
-        // Insufficient points -> signal caller to return 400, matching original behavior
-        if (user.getProfile().getPointsBalance() < offer.getCostPoints()) {
-            return Optional.empty();
+        // Check if user has enough points
+        int userPoints = user.getProfile().getPointsBalance();
+        int offerCost = offer.getCostPoints();
+        
+        if (userPoints < offerCost) {
+            throw new InsufficientPointsException("Not enough points. You have " + userPoints + 
+                                                  " but need " + offerCost + " points");
         }
 
-        // Deduct points
-        user.getProfile().setPointsBalance(
-            user.getProfile().getPointsBalance() - offer.getCostPoints()
-        );
+        // Deduct points from user
+        int newPoints = userPoints - offerCost;
+        user.getProfile().setPointsBalance(newPoints);
 
-        // Create REDEMPTION transaction
-        Transaction txn = Transaction.builder()
-            .externalId("RED-" + System.currentTimeMillis())
-            .type("REDEMPTION")
-            .pointsEarned(0)
-            .pointsRedeemed(offer.getCostPoints())
-            .store(req.store())
-            .date(LocalDate.now())
-            .note(offer.getTitle())
-            .user(user)
-            .build();
-        transactionRepository.save(txn);
+        // Note: Tier is based on lifetime points and is automatically updated by JPA @PreUpdate callback
+        // Tier doesn't decrease when spending points (only increases when earning)
 
-        // Create Redemption record
-        Redemption red = Redemption.builder()
-            .transactionId(txn.getExternalId())
-            .confirmationCode("CONF-" + System.currentTimeMillis())
-            .date(LocalDate.now())
-            .costPoints(offer.getCostPoints())
-            .offerTitle(offer.getTitle())
-            .store(req.store())
-            .user(user)
-            .build();
-        redemptionRepository.save(red);
+        // Create redemption transaction
+        Transaction transaction = new Transaction();
+        transaction.setExternalId("RED-" + System.currentTimeMillis());
+        transaction.setType("REDEMPTION");
+        transaction.setPointsEarned(0);
+        transaction.setPointsRedeemed(offerCost);
+        transaction.setStore(request.store());
+        transaction.setDate(LocalDate.now());
+        transaction.setNote(offer.getTitle());
+        transaction.setUser(user);
+        
+        transactionRepository.save(transaction);
 
-        // Persist user balance
+        // Create redemption record
+        Redemption redemption = new Redemption();
+        redemption.setTransactionId(transaction.getExternalId());
+        redemption.setConfirmationCode("CONF-" + System.currentTimeMillis());
+        redemption.setDate(LocalDate.now());
+        redemption.setCostPoints(offerCost);
+        redemption.setOfferTitle(offer.getTitle());
+        redemption.setStore(request.store());
+        redemption.setUser(user);
+
+        redemptionRepository.save(redemption);
         userRepository.save(user);
 
-        return Optional.of(red);
+        return redemption;
     }
 }
