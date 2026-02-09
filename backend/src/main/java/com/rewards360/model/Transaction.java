@@ -1,61 +1,133 @@
+
 package com.rewards360.model;
 
+import jakarta.persistence.*;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-
 @Entity
-@Table(name = "transaction")
-@Getter
-@Setter
-@NoArgsConstructor
-@AllArgsConstructor
+@Table(name = "transactions")
 public class Transaction {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    // Business identifiers
+    @Column(unique = true)
+    private String transactionId;
+
+    @Column(unique = true)
+    private String externalId; // For rewards transactions
     
-    @Column(name = "external_id", unique = true, nullable = false, length = 50)
-    private String externalId;
-    
-    @Column(name = "type", nullable = false, length = 20)
-    private String type; // PURCHASE, REDEMPTION, CLAIM
-    
-    @Column(name = "points_earned", nullable = false)
-    private int pointsEarned;
-    
-    @Column(name = "points_redeemed", nullable = false)
-    private int pointsRedeemed;
-    
-    @Column(name = "store", length = 100)
+    private String accountId;
+
+    // Monetary details (for fraud detection)
+    @Column(precision = 18, scale = 2)
+    private BigDecimal amount;
+
+    @Column(length = 3)
+    private String currency; // e.g., "USD", "INR"
+
+    // Context (for fraud detection)
+    private String merchantName;
+    private String merchantCategory; // e.g., "ELECTRONICS", "GROCERY"
+    private String paymentMethod;    // e.g., "CARD", "UPI", "NETBANKING"
+    private String location;         // e.g., "Pune, IN"
+    @Column(length = 2000)
+    private String description;
+
+    // Risk & status for the screen
+    private String riskLevel; // "LOW", "MEDIUM", "HIGH", "CRITICAL"
+
+    private String status = "CLEARED"; // "CLEARED", "REVIEW", "BLOCKED"
+
+    // Rewards-specific fields
+    private String type; // "CLAIM", "REDEMPTION", etc.
+    private Integer pointsEarned;
+    private Integer pointsRedeemed;
     private String store;
-    
-    @Column(name = "date", nullable = false)
     private LocalDate date;
-    
-    @Column(name = "expiry")
     private LocalDate expiry;
-    
-    @Column(name = "note", length = 500)
     private String note;
     
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    @JsonIgnore
+    @JoinColumn(name = "user_id")
     private User user;
+
+    // Timestamps
+    @Column(nullable = false, updatable = false)
+    private Instant createdAt = Instant.now();
+    private Instant updatedAt;
+
+    // --- getters & setters ---
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+
+    public String getTransactionId() { return transactionId; }
+    public void setTransactionId(String transactionId) { this.transactionId = transactionId; }
+
+    public String getExternalId() { return externalId; }
+    public void setExternalId(String externalId) { this.externalId = externalId; }
+
+    public String getAccountId() { return accountId; }
+    public void setAccountId(String accountId) { this.accountId = accountId; }
+
+    public BigDecimal getAmount() { return amount; }
+    public void setAmount(BigDecimal amount) { this.amount = amount; }
+
+    public String getCurrency() { return currency; }
+    public void setCurrency(String currency) { this.currency = currency; }
+
+    public String getMerchantName() { return merchantName; }
+    public void setMerchantName(String merchantName) { this.merchantName = merchantName; }
+
+    public String getMerchantCategory() { return merchantCategory; }
+    public void setMerchantCategory(String merchantCategory) { this.merchantCategory = merchantCategory; }
+
+    public String getPaymentMethod() { return paymentMethod; }
+    public void setPaymentMethod(String paymentMethod) { this.paymentMethod = paymentMethod; }
+
+    public String getLocation() { return location; }
+    public void setLocation(String location) { this.location = location; }
+
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
+
+    public String getRiskLevel() { return riskLevel; }
+    public void setRiskLevel(String riskLevel) { this.riskLevel = riskLevel; }
+
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+
+    public String getType() { return type; }
+    public void setType(String type) { this.type = type; }
+
+    public Integer getPointsEarned() { return pointsEarned; }
+    public void setPointsEarned(Integer pointsEarned) { this.pointsEarned = pointsEarned; }
+
+    public Integer getPointsRedeemed() { return pointsRedeemed; }
+    public void setPointsRedeemed(Integer pointsRedeemed) { this.pointsRedeemed = pointsRedeemed; }
+
+    public String getStore() { return store; }
+    public void setStore(String store) { this.store = store; }
+
+    public LocalDate getDate() { return date; }
+    public void setDate(LocalDate date) { this.date = date; }
+
+    public LocalDate getExpiry() { return expiry; }
+    public void setExpiry(LocalDate expiry) { this.expiry = expiry; }
+
+    public String getNote() { return note; }
+    public void setNote(String note) { this.note = note; }
+
+    public User getUser() { return user; }
+    public void setUser(User user) { this.user = user; }
+
+    public Instant getCreatedAt() { return createdAt; }
+    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+
+    public Instant getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
 }
